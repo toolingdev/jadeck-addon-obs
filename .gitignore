@@ -1,0 +1,5 @@
+bin/
+dist/
+addon.json
+/jadeck-addon-obs
+/jadeck-addon-obs.exe
