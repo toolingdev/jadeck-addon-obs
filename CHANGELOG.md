@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.1
+
+- **Scenes:** the scene you tap shows ON AIR right away. Before, the old
+  scene could stay red for a second or two, so a tap felt like it needed a
+  second one.
+
 ## 0.1.0
 
 First release.
