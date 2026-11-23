@@ -15,11 +15,11 @@ import (
 )
 
 // Version is set by the release build.
-var Version = "0.1.1"
+var Version = "0.1.2"
 
 func main() { addon.Serve(spec()) }
 
-const changelog = `0.1.1: a tapped scene shows ON AIR right away (no second tap). 0.1.0: first release.
+const changelog = `0.1.2: Be right back counts the time away on its button (needs jadeck 0.8.3). 0.1.1: a tapped scene shows ON AIR right away (no second tap). 0.1.0: first release.
 - Connects to OBS Studio 28 or later over obs-websocket (password supported); reconnects by itself when OBS restarts.
 - Widgets: Program (a live picture of what's on air), Stream (go live / stop and record, pressed and held, with bitrate, dropped frames and CPU, and what to do when the upload struggles), Scenes, Lyrics (show / hide Proclaim's lyrics, lower third or full screen) and Audio (faders, meters, mute).
 - OBS also works as a switcher in jadeck: Cut / Fade, Input bank, Program and the stage screen's "We are live".

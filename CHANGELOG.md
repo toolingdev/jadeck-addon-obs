@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.2
+
+- **Scenes:** while Be right back is on air its button counts the time
+  away ("away 1:42"), so a break never runs long unnoticed. Pick another
+  scene in the widget's "Show time away on". Needs jadeck 0.8.3 to show.
+
 ## 0.1.1
 
 - **Scenes:** the scene you tap shows ON AIR right away. Before, the old
