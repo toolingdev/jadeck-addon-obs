@@ -59,7 +59,7 @@ func newFakeOBS(t *testing.T, password string) *fakeOBS {
 		items:  map[string][]*fakeItem{"Pastor": {{1, "Zoom", true}}, "Pastor + lyrics": {{2, "Zoom", true}, {3, "Proclaim", true}}},
 		inputs: map[string]string{"Zoom": "screen_capture", "Proclaim": "ndi_source", "Mic/Aux": "coreaudio_input_capture"},
 		muted:  map[string]bool{"Mic/Aux": true}, volume: map[string]float64{"Zoom": 0, "Mic/Aux": -6},
-		kinds:  []string{"screen_capture", "ndi_source", "color_source", "text_ft2_source", "coreaudio_input_capture"},
+		kinds:  []string{"screen_capture", "sck_audio_capture", "ndi_source", "color_source_v3", "text_ft2_source_v2", "coreaudio_input_capture"},
 		nextID: 10,
 	}
 	f.srv = httptest.NewServer(http.HandlerFunc(f.serve))
@@ -316,7 +316,18 @@ func (f *fakeOBS) request(typ string, d map[string]any) (any, int, string) {
 		f.scenes = append(f.scenes, str("sceneName"))
 		f.items[str("sceneName")] = nil
 		return map[string]any{"sceneUuid": "x"}, 100, ""
+	case "RemoveScene":
+		for i, x := range f.scenes {
+			if x == str("sceneName") {
+				f.scenes = append(f.scenes[:i], f.scenes[i+1:]...)
+				break
+			}
+		}
+		return nil, 100, ""
 	case "CreateInput":
+		if !strings.HasSuffix(str("inputKind"), "_v3") && !strings.HasSuffix(str("inputKind"), "_v2") && !contains(f.kinds, str("inputKind")) || str("inputKind") == "color_source" {
+			return nil, 605, "Your specified input kind is not supported by OBS."
+		}
 		if _, ok := f.inputs[str("inputName")]; ok {
 			return nil, 601, "A source already exists by that input name."
 		}

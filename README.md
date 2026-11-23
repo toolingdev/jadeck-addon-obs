@@ -43,8 +43,8 @@ again never makes duplicates.
 | Starting soon | A dark card: "We'll begin shortly" |
 | Pastor | The Zoom call, full frame |
 | Pastor + lyrics | The Zoom call with Proclaim's lyrics on top |
-| Slide full screen | Proclaim alone |
-| Be right back | A card, for when the call drops |
+| Slide full screen | Proclaim on a dark background (the call stays underneath, so the sermon is still heard) |
+| Be right back | A card, for when the call drops (the call's sound stays on) |
 | Ending | "Thank you for joining us" |
 
 ## Widgets

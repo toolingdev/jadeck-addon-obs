@@ -222,8 +222,19 @@ func TestMakeScenes(t *testing.T) {
 	slide := f.items["Slide full screen"]
 	brb := f.items["Be right back"]
 	f.mu.Unlock()
-	if len(slide) != 1 || slide[0].Source != "Proclaim" || len(brb) != 2 {
-		t.Fatalf("slide %v, brb %v", slide, brb)
+	// the full-screen verse and Be right back keep the sermon's sound:
+	// the call under an opaque background, the slide / card on top
+	src := func(l []*fakeItem) (out []string) {
+		for _, x := range l {
+			out = append(out, x.Source)
+		}
+		return
+	}
+	if got := strings.Join(src(slide), ","); got != "Zoom,Slide full screen · background,Proclaim" {
+		t.Fatalf("slide: %s", got)
+	}
+	if got := strings.Join(src(brb), ","); got != "Zoom,Be right back · background,Be right back · text" {
+		t.Fatalf("brb: %s", got)
 	}
 	// again: nothing new
 	r, _ = act(t, c, "make_scenes", map[string]any{})
@@ -247,11 +258,28 @@ func TestMakeScenesFromScratch(t *testing.T) {
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.inputs["Zoom"] != "screen_capture" || f.inputs["Proclaim"] != "ndi_source" {
+	if f.inputs["Zoom"] != "screen_capture" || f.inputs["Proclaim"] != "ndi_source" || f.inputs["Zoom sound"] != "" || f.inputs["Starting soon · text"] != "text_ft2_source_v2" {
 		t.Fatalf("inputs %v", f.inputs)
 	}
 	if !strings.Contains(r.(map[string]any)["text"].(string), "double-click") {
 		t.Fatalf("no notes on what to pick: %v", r)
+	}
+}
+
+// A source OBS can't make leaves no half-made scene behind.
+func TestMakeScenesRollsBack(t *testing.T) {
+	f := newFakeOBS(t, "")
+	f.kinds = []string{"screen_capture", "color_source"} // unversioned: OBS refuses it
+	c := dialFake(t, f, "")
+	connected(t, c)
+	r, _ := act(t, c, "make_scenes", map[string]any{})
+	if !strings.Contains(r.(map[string]any)["error"].(string), "Ending") {
+		t.Fatalf("%v", r)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if contains(f.scenes, "Ending") {
+		t.Fatalf("half-made scene left: %v", f.scenes)
 	}
 }
 

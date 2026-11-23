@@ -13,6 +13,7 @@ import (
 
 type sceneKit struct {
 	zoom, lyrics string // source names ("" = none)
+	sound        string // Zoom's sound when it's its own source (Mac)
 	textKind     string
 	colorKind    string
 	w, h         int
@@ -36,10 +37,20 @@ func (c *Conn) makeScenes(ctx context.Context, cl *obsClient) (any, error) {
 	var kinds struct {
 		Kinds []string `json:"inputKinds"`
 	}
-	if err := cl.call(ctx, "GetInputKindList", map[string]any{"unversioned": true}, &kinds); err != nil {
+	if err := cl.call(ctx, "GetInputKindList", map[string]any{"unversioned": false}, &kinds); err != nil {
 		return nil, err
 	}
-	has := func(k string) bool { return contains(kinds.Kinds, k) }
+	// OBS makes sources by their versioned kind ("color_source_v3"):
+	// kind("color_source") is the one this OBS has, "" if none.
+	kind := func(base string) string {
+		for _, k := range kinds.Kinds {
+			if k == base || strings.HasPrefix(k, base+"_v") {
+				return k
+			}
+		}
+		return ""
+	}
+	has := func(k string) bool { return kind(k) != "" }
 	var vs struct {
 		W int `json:"baseWidth"`
 		H int `json:"baseHeight"`
@@ -51,13 +62,11 @@ func (c *Conn) makeScenes(ctx context.Context, cl *obsClient) (any, error) {
 	}
 	for _, t := range []string{"text_ft2_source", "text_gdiplus"} {
 		if has(t) {
-			k.textKind = t
+			k.textKind = kind(t)
 			break
 		}
 	}
-	if has("color_source") {
-		k.colorKind = "color_source"
-	}
+	k.colorKind = kind("color_source")
 
 	c.mu.Lock()
 	inputs := map[string]string{}
@@ -75,22 +84,30 @@ func (c *Conn) makeScenes(ctx context.Context, cl *obsClient) (any, error) {
 	}
 	var created []string
 	if k.zoom == "" {
-		kind, settings := "", map[string]any{}
+		ck, settings := "", map[string]any{}
 		switch {
-		case has("screen_capture"): // macOS 13+: capture the Zoom app (picture and sound)
-			kind, settings = "screen_capture", map[string]any{"type": 2, "application": "us.zoom.xos", "show_cursor": false}
+		case has("screen_capture"): // macOS 13+: capture the Zoom app
+			ck, settings = kind("screen_capture"), map[string]any{"type": 2, "application": "us.zoom.xos", "show_cursor": false}
 		case has("window_capture"): // Windows
-			kind, settings = "window_capture", map[string]any{"window": "Zoom Meeting:ConfMultiTabContentWndClass:Zoom.exe", "cursor": false}
+			ck, settings = kind("window_capture"), map[string]any{"window": "Zoom Meeting:ConfMultiTabContentWndClass:Zoom.exe", "cursor": false}
 		case has("xcomposite_input"):
-			kind = "xcomposite_input"
+			ck = kind("xcomposite_input")
 		}
-		if kind == "" {
+		if ck == "" {
 			k.notes = append(k.notes, "This OBS can't capture windows: add the Zoom window yourself as a source named Zoom.")
 		} else {
 			k.zoom = uniqueName(inputs, "Zoom")
-			inputs[k.zoom] = kind
+			inputs[k.zoom] = ck
 			k.notes = append(k.notes, "Made the source \""+k.zoom+"\": in OBS, double-click it and check it shows the Zoom call (pick the Zoom meeting window if not).")
-			k.pending[k.zoom] = pendingInput{kind: kind, settings: settings}
+			k.pending[k.zoom] = pendingInput{kind: ck, settings: settings}
+		}
+	}
+	// Zoom's sound: the capture carries it (OBS 30+ on a Mac, window
+	// capture on Windows). Someone's own separate Zoom audio source is used
+	// too; none is ever made (the sermon would play twice).
+	for n, kd := range inputs {
+		if strings.Contains(strings.ToLower(n), "zoom") && strings.Contains(kd, "audio") {
+			k.sound = n
 		}
 	}
 	// Lyrics: Proclaim's NDI output
@@ -98,8 +115,8 @@ func (c *Conn) makeScenes(ctx context.Context, cl *obsClient) (any, error) {
 	if k.lyrics == "" {
 		if has("ndi_source") {
 			k.lyrics = uniqueName(inputs, "Proclaim")
-			inputs[k.lyrics] = "ndi_source"
-			k.pending[k.lyrics] = pendingInput{kind: "ndi_source", settings: map[string]any{}}
+			inputs[k.lyrics] = kind("ndi_source")
+			k.pending[k.lyrics] = pendingInput{kind: kind("ndi_source"), settings: map[string]any{}}
 			k.notes = append(k.notes, "Made the source \""+k.lyrics+"\": in OBS, double-click it and pick Proclaim's NDI output (turn it on in Proclaim first, with a transparent background).")
 		} else {
 			k.notes = append(k.notes, "No NDI in this OBS: install the DistroAV plugin, then press Make the scenes again to add the lyrics.")
@@ -111,13 +128,19 @@ func (c *Conn) makeScenes(ctx context.Context, cl *obsClient) (any, error) {
 		parts []string // "zoom", "lyrics", "card:<text>"
 	}{
 		{scStarting, []string{"card:We'll begin shortly"}},
-		{scPastor, []string{"zoom"}},
-		{scLyrics, []string{"zoom", "lyrics"}},
-		{scSlide, []string{"lyrics"}},
-		{scBRB, []string{"card:We'll be right back"}},
+		{scPastor, []string{"zoom", "sound"}},
+		{scLyrics, []string{"zoom", "sound", "lyrics"}},
+		// the sermon is still heard under a full-screen verse and Be right
+		// back: the call sits under an opaque background
+		{scSlide, []string{"zoom", "sound", "bg", "lyrics"}},
+		{scBRB, []string{"zoom", "sound", "card:We'll be right back"}},
 		{scEnding, []string{"card:Thank you for joining us"}},
 	}
-	for _, sc := range plan {
+	// OBS puts each new scene just under the current one: make them last
+	// first so its list reads Starting soon … Ending, top to bottom.
+	made := map[string]bool{}
+	for i := len(plan) - 1; i >= 0; i-- {
+		sc := plan[i]
 		if contains(existing, sc.name) {
 			continue
 		}
@@ -136,18 +159,30 @@ func (c *Conn) makeScenes(ctx context.Context, cl *obsClient) (any, error) {
 		for _, p := range sc.parts {
 			var err error
 			switch {
+			case p == "sound":
+				if k.sound != "" {
+					err = k.place(ctx, cl, sc.name, k.sound)
+				}
 			case p == "zoom":
 				err = k.place(ctx, cl, sc.name, k.zoom)
 			case p == "lyrics":
 				err = k.place(ctx, cl, sc.name, k.lyrics)
+			case p == "bg":
+				err = k.card(ctx, cl, sc.name, "", inputs)
 			case strings.HasPrefix(p, "card:"):
 				err = k.card(ctx, cl, sc.name, strings.TrimPrefix(p, "card:"), inputs)
 			}
 			if err != nil {
+				cl.call(ctx, "RemoveScene", map[string]any{"sceneName": sc.name}, nil) // no half-made scene left behind
 				return nil, fmt.Errorf("making %q: %w", sc.name, err)
 			}
 		}
-		created = append(created, sc.name)
+		made[sc.name] = true
+	}
+	for _, sc := range plan {
+		if made[sc.name] {
+			created = append(created, sc.name)
+		}
 	}
 	go func() { c.refreshInputs(cl); c.refreshScenes(cl); c.changed() }()
 	msg := "Nothing to add: those scenes are already in OBS."
@@ -173,8 +208,14 @@ func (k *sceneKit) place(ctx context.Context, cl *obsClient, scene, source strin
 			return err
 		}
 		delete(k.pending, source)
+		if source == k.sound {
+			return nil
+		}
 	} else if err := cl.call(ctx, "CreateSceneItem", map[string]any{"sceneName": scene, "sourceName": source, "sceneItemEnabled": true}, &r); err != nil {
 		return err
+	}
+	if source == k.sound {
+		return nil // sound only: nothing to fit
 	}
 	return cl.call(ctx, "SetSceneItemTransform", map[string]any{"sceneName": scene, "sceneItemId": r.ID, "sceneItemTransform": map[string]any{
 		"positionX": 0, "positionY": 0, "alignment": 5, "boundsType": "OBS_BOUNDS_SCALE_INNER", "boundsAlignment": 0,
@@ -191,13 +232,13 @@ func (k *sceneKit) card(ctx context.Context, cl *obsClient, scene, text string, 
 			return err
 		}
 	}
-	if k.textKind == "" {
+	if k.textKind == "" || text == "" {
 		return nil
 	}
 	name := uniqueName(inputs, scene+" · text")
 	inputs[name] = k.textKind
 	settings := map[string]any{"text": text, "font": map[string]any{"face": "Helvetica", "size": k.h / 12, "style": "Bold"}}
-	if k.textKind == "text_gdiplus" {
+	if strings.HasPrefix(k.textKind, "text_gdiplus") {
 		settings["font"] = map[string]any{"face": "Segoe UI", "size": k.h / 12, "style": "Bold"}
 	}
 	var r struct {
@@ -211,6 +252,9 @@ func (k *sceneKit) card(ctx context.Context, cl *obsClient, scene, text string, 
 }
 
 func isCapture(kind string) bool {
+	if strings.Contains(kind, "audio") {
+		return false
+	}
 	for _, s := range []string{"screen_capture", "window_capture", "xcomposite", "display_capture", "macos-avcapture", "sck"} {
 		if strings.Contains(kind, s) {
 			return true

@@ -416,6 +416,9 @@ func (c *Conn) onEvent(typ string, d json.RawMessage) {
 		c.mu.Lock()
 		c.studio = e.Enabled
 		c.mu.Unlock()
+	case "CurrentSceneCollectionChanged", "CurrentProfileChanged":
+		later(c.refreshAll) // a whole other set of scenes and sources
+		return
 	case "SceneCreated", "SceneRemoved", "SceneNameChanged", "SceneListChanged":
 		later(c.refreshScenes)
 		return
