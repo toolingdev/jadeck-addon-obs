@@ -73,28 +73,29 @@ type Conn struct {
 	now    func() time.Time
 	dial   func(ctx context.Context) (*obsClient, error)
 
-	mu      sync.Mutex
-	cl      *obsClient
-	err     error
-	notify  addon.Notifier
-	version string
-	wsver   string
-	scenes  []string // OBS's order, top of OBS's list first
-	program string
-	preview string
-	next    string // the next scene outside Studio Mode (jadeck's preview)
-	studio  bool
-	items   map[string][]sceneItem
-	inputs  map[string]string // name → kind
-	audio   map[string]*audioInput
-	stream  outStatus
-	record  outStatus
-	stats   obsStats
-	kbps    int
-	lastB   int64
-	lastAt  time.Time
-	shot    map[string]shotCache
-	sample  bool // a made-up OBS for the Settings previews
+	mu           sync.Mutex
+	cl           *obsClient
+	err          error
+	notify       addon.Notifier
+	version      string
+	wsver        string
+	scenes       []string // OBS's order, top of OBS's list first
+	program      string
+	programSince time.Time // when the scene on air went on (for the away timer)
+	preview      string
+	next         string // the next scene outside Studio Mode (jadeck's preview)
+	studio       bool
+	items        map[string][]sceneItem
+	inputs       map[string]string // name → kind
+	audio        map[string]*audioInput
+	stream       outStatus
+	record       outStatus
+	stats        obsStats
+	kbps         int
+	lastB        int64
+	lastAt       time.Time
+	shot         map[string]shotCache
+	sample       bool // a made-up OBS for the Settings previews
 }
 
 type shotCache struct {
@@ -118,6 +119,15 @@ func newConn(cfg config) *Conn {
 }
 
 func (c *Conn) SetNotify(n addon.Notifier) { c.mu.Lock(); c.notify = n; c.mu.Unlock() }
+
+// setProgram records the scene on air and, when it changes, since when.
+// Call with c.mu held.
+func (c *Conn) setProgram(name string) {
+	if name != c.program || c.programSince.IsZero() {
+		c.programSince = time.Now()
+	}
+	c.program = name
+}
 
 func (c *Conn) changed() {
 	c.mu.Lock()
@@ -312,7 +322,8 @@ func (c *Conn) refreshScenes(cl *obsClient) {
 		}
 	}
 	c.mu.Lock()
-	c.scenes, c.program, c.preview, c.items = names, r.Program, r.Preview, items
+	c.scenes, c.preview, c.items = names, r.Preview, items
+	c.setProgram(r.Program)
 	c.mu.Unlock()
 }
 
@@ -398,7 +409,7 @@ func (c *Conn) onEvent(typ string, d json.RawMessage) {
 		}
 		json.Unmarshal(d, &e)
 		c.mu.Lock()
-		c.program = e.Name
+		c.setProgram(e.Name)
 		c.mu.Unlock()
 	case "CurrentPreviewSceneChanged":
 		var e struct {

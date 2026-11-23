@@ -93,7 +93,7 @@ func (c *Conn) AddonAction(ctx context.Context, name string, raw json.RawMessage
 		if studio {
 			c.preview = s
 		} else {
-			c.program = s
+			c.setProgram(s)
 		}
 		c.mu.Unlock()
 		c.changed()

@@ -142,6 +142,23 @@ func TestActions(t *testing.T) {
 		t.Fatalf("program right after the switch = %q", got)
 	}
 	waitFor(t, "program from the event", func() bool { return state(t, c, nil)["program"] == "Pastor + lyrics" })
+	// the away scene on air (here "Pastor", set on the widget): its button
+	// counts the time away
+	if _, err := act(t, c, "scene", map[string]any{"scene": "Pastor"}); err != nil {
+		t.Fatal(err)
+	}
+	var brbLive map[string]any
+	for _, b := range state(t, c, map[string]any{"awayScene": "Pastor"})["sceneButtons"].([]map[string]any) {
+		if b["label"] == "Pastor" {
+			brbLive, _ = b["live"].(map[string]any)
+		}
+	}
+	if brbLive == nil || brbLive["prefix"] != "away" || brbLive["since"].(int64) <= 0 {
+		t.Fatalf("the away scene on air should count time away: %v", brbLive)
+	}
+	if _, err := act(t, c, "scene", map[string]any{"scene": "Pastor + lyrics"}); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := act(t, c, "scene", map[string]any{"scene": "Nope"}); err == nil {
 		t.Fatal("unknown scene accepted")
 	}

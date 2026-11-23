@@ -129,12 +129,17 @@ func (c *Conn) AddonStateFor(ctx context.Context, settings map[string]any) (map[
 			}
 		}
 	}
+	away := w.str("awayScene", scBRB)
 	var sb []map[string]any
 	for i, s := range pick {
 		b := map[string]any{"id": "scene:" + s, "label": s, "action": "scene", "params": map[string]any{"scene": s}}
 		switch {
 		case s == c.program:
 			b["tone"], b["sub"] = "pgm", "ON AIR"
+			// how long you've been away, ticking on the button (design page 37)
+			if s == away && !c.programSince.IsZero() {
+				b["live"] = map[string]any{"prefix": "away", "since": c.programSince.UnixMilli()}
+			}
 		case (c.studio && s == c.preview) || (!c.studio && s == c.next):
 			b["tone"], b["sub"] = "pvw", "NEXT"
 		default:
