@@ -86,6 +86,17 @@ func (c *Conn) AddonAction(ctx context.Context, name string, raw json.RawMessage
 		if err := cl.call(ctx, req, map[string]any{"sceneName": s}, nil); err != nil {
 			return nil, err
 		}
+		// OBS took it: show it now. Its own "scene changed" event can come
+		// after the widget's refresh, which left the old scene red for a
+		// poll or two (so a tap felt like it needed a second one).
+		c.mu.Lock()
+		if studio {
+			c.preview = s
+		} else {
+			c.program = s
+		}
+		c.mu.Unlock()
+		c.changed()
 		return map[string]any{"scene": s}, nil
 	case "transition":
 		return nil, cl.call(ctx, "TriggerStudioModeTransition", nil, nil)

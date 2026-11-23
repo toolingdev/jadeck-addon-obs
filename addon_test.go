@@ -134,6 +134,13 @@ func TestActions(t *testing.T) {
 	if _, err := act(t, c, "scene", map[string]any{"scene": "Pastor + lyrics"}); err != nil {
 		t.Fatal(err)
 	}
+	// on air the moment OBS takes it, not after OBS's own event
+	c.mu.Lock()
+	got := c.program
+	c.mu.Unlock()
+	if got != "Pastor + lyrics" {
+		t.Fatalf("program right after the switch = %q", got)
+	}
 	waitFor(t, "program from the event", func() bool { return state(t, c, nil)["program"] == "Pastor + lyrics" })
 	if _, err := act(t, c, "scene", map[string]any{"scene": "Nope"}); err == nil {
 		t.Fatal("unknown scene accepted")
